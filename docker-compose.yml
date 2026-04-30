@@ -1,0 +1,46 @@
+version: "3.9"
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: who
+    ports:
+      - "3306:3306"
+    command: ["--default-authentication-plugin=mysql_native_password"]
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+  backend:
+    build:
+      context: ./python
+      dockerfile: Dockerfile
+    environment:
+      DB_URL: mysql+pymysql://root:root@mysql:3306/who
+      REDIS_URL: redis://redis:6379/0
+      CORS_ORIGINS: http://localhost:5173
+    ports:
+      - "8000:8000"
+    depends_on:
+      - mysql
+      - redis
+
+  frontend:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    environment:
+      VITE_API_BASE: http://localhost:8000
+      VITE_WS_BASE: ws://localhost:8000
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+volumes:
+  mysql_data:

@@ -1,0 +1,18 @@
+from enum import Enum
+
+
+class GamePhase(str, Enum):
+    LOBBY = "LOBBY"
+    GAME_INIT = "GAME_INIT"
+    ROUND_SPEAKING = "ROUND_SPEAKING"
+    ROUND_VOTING = "ROUND_VOTING"
+    ROUND_TIE_BREAK = "ROUND_TIE_BREAK"
+    ROUND_GUESSING = "ROUND_GUESSING"
+    ROUND_RESULT = "ROUND_RESULT"
+    GAME_FINISHED = "GAME_FINISHED"
+
+
+class RoleType(str, Enum):
+    CIVILIAN = "CIVILIAN"
+    UNDERCOVER = "UNDERCOVER"
+    BLANK = "BLANK"
