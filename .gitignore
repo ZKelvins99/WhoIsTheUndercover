@@ -1,0 +1,36 @@
+# Python 相关
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.env
+.venv
+*.env
+*.bak
+
+# Vue / Node 前端相关
+web/node_modules/
+web/dist/
+web/.dist/
+web/.nuxt/
+web/.vuepress/dist/
+web/.DS_Store
+web/npm-debug.log
+web/yarn-debug.log
+web/yarn-error.log
+web/.idea/
+web/.vscode/
+
+# 编辑器
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 系统文件
+.DS_Store
+Thumbs.db
