@@ -51,6 +51,7 @@ class Game(Base):
     winner_side: Mapped[str] = mapped_column(String(20), default="")
     civilian_word: Mapped[str] = mapped_column(String(100), default="苹果")
     undercover_word: Mapped[str] = mapped_column(String(100), default="梨")
+    tied_player_ids: Mapped[str] = mapped_column(Text, default="[]")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
@@ -71,17 +72,8 @@ class Round(Base):
     game_id: Mapped[int] = mapped_column(ForeignKey("games.id"), index=True)
     round_no: Mapped[int] = mapped_column(Integer, index=True)
     phase: Mapped[str] = mapped_column(String(32), default=GamePhase.ROUND_SPEAKING.value)
-
-
-class SpeakingRecord(Base):
-    __tablename__ = "speaking_records"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    game_id: Mapped[int] = mapped_column(ForeignKey("games.id"), index=True)
-    round_id: Mapped[int] = mapped_column(ForeignKey("rounds.id"), index=True)
-    player_id: Mapped[int] = mapped_column(ForeignKey("room_players.id"), index=True)
-    spoken: Mapped[bool] = mapped_column(Boolean, default=False)
-    order_no: Mapped[int] = mapped_column(Integer, default=0)
+    speaking_order: Mapped[str] = mapped_column(Text, default="[]")
+    is_tie_break: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class Vote(Base):
@@ -105,47 +97,3 @@ class GuessAttempt(Base):
     guess_order: Mapped[int] = mapped_column(Integer, default=1)
     guess_text: Mapped[str] = mapped_column(String(100))
     is_hit: Mapped[bool] = mapped_column(Boolean, default=False)
-
-
-class RoundScore(Base):
-    __tablename__ = "round_scores"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    game_id: Mapped[int] = mapped_column(ForeignKey("games.id"), index=True)
-    round_id: Mapped[int] = mapped_column(ForeignKey("rounds.id"), index=True)
-    player_id: Mapped[int] = mapped_column(ForeignKey("room_players.id"), index=True)
-    score: Mapped[int] = mapped_column(Integer, default=0)
-
-
-class GameScore(Base):
-    __tablename__ = "game_scores"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    game_id: Mapped[int] = mapped_column(ForeignKey("games.id"), index=True)
-    player_id: Mapped[int] = mapped_column(ForeignKey("room_players.id"), index=True)
-    total_score: Mapped[int] = mapped_column(Integer, default=0)
-    survival_rounds: Mapped[int] = mapped_column(Integer, default=0)
-    hit_votes: Mapped[int] = mapped_column(Integer, default=0)
-
-
-class LeaderboardSnapshot(Base):
-    __tablename__ = "leaderboard_snapshots"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    room_id: Mapped[int] = mapped_column(ForeignKey("rooms.id"), index=True)
-    game_id: Mapped[int] = mapped_column(ForeignKey("games.id"), index=True)
-    data_json: Mapped[str] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-
-
-class OperationLog(Base):
-    __tablename__ = "operation_logs"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    room_id: Mapped[int] = mapped_column(ForeignKey("rooms.id"), index=True)
-    game_id: Mapped[int] = mapped_column(Integer, default=0, index=True)
-    actor_type: Mapped[str] = mapped_column(String(20))
-    actor_id: Mapped[str] = mapped_column(String(64))
-    action: Mapped[str] = mapped_column(String(60))
-    payload_json: Mapped[str] = mapped_column(Text, default="{}")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

@@ -38,11 +38,6 @@ class GuessReq(BaseModel):
     guess_text: str = Field(min_length=1, max_length=100)
 
 
-class InteractionBonusReq(BaseModel):
-    speech_bonus_player_ids: list[int] = Field(default_factory=list, max_length=2)
-    logic_bonus_player_ids: list[int] = Field(default_factory=list, max_length=2)
-
-
 class NextSpeakerResp(BaseModel):
     player_id: int
 

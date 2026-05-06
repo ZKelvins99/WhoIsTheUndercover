@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 
@@ -20,8 +20,31 @@ const startForm = ref({
   undercoverWord: "梨",
 });
 
+const ROLE_TEMPLATES: Record<number, { c: number; u: number; b: number }> = {
+  10: { c: 7, u: 2, b: 1 },
+  11: { c: 8, u: 2, b: 1 },
+  12: { c: 8, u: 3, b: 1 },
+  13: { c: 9, u: 3, b: 1 },
+  14: { c: 9, u: 3, b: 2 },
+  15: { c: 10, u: 3, b: 2 },
+};
+
+const playerCount = computed(() => store.players.length);
+
+watch(playerCount, (n) => {
+  const tpl = ROLE_TEMPLATES[n];
+  if (tpl) {
+    startForm.value.civilianCount = tpl.c;
+    startForm.value.undercoverCount = tpl.u;
+    startForm.value.blankCount = tpl.b;
+  }
+});
+
 const roleTotal = computed(
-  () => startForm.value.civilianCount + startForm.value.undercoverCount + startForm.value.blankCount
+  () =>
+    startForm.value.civilianCount +
+    startForm.value.undercoverCount +
+    startForm.value.blankCount
 );
 
 async function refresh() {
@@ -86,28 +109,60 @@ onMounted(async () => {
     <h1 class="page-title">房间大厅 {{ roomCode }}</h1>
     <div class="panel">
       <div style="display: flex; gap: 8px; margin-bottom: 10px">
-        <el-button @click="toggleLock">{{ locked ? "解锁房间" : "锁定房间" }}</el-button>
+        <el-button @click="toggleLock">{{
+          locked ? "解锁房间" : "锁定房间"
+        }}</el-button>
         <el-button type="primary" @click="startGame">开始游戏</el-button>
       </div>
 
-      <div style="display: grid; grid-template-columns: repeat(2, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px">
+      <div
+        style="
+          display: grid;
+          grid-template-columns: repeat(2, minmax(180px, 1fr));
+          gap: 12px;
+          margin-bottom: 16px;
+        "
+      >
         <el-form-item label="平民人数">
-          <el-input-number v-model="startForm.civilianCount" :min="0" :step="1" />
+          <el-input-number
+            v-model="startForm.civilianCount"
+            :min="0"
+            :step="1"
+          />
         </el-form-item>
         <el-form-item label="卧底人数">
-          <el-input-number v-model="startForm.undercoverCount" :min="0" :step="1" />
+          <el-input-number
+            v-model="startForm.undercoverCount"
+            :min="0"
+            :step="1"
+          />
         </el-form-item>
         <el-form-item label="白板人数">
-          <el-input-number v-model="startForm.blankCount" :min="0" :step="1" />
+          <el-input-number
+            v-model="startForm.blankCount"
+            :min="0"
+            :step="1"
+          />
         </el-form-item>
         <el-form-item label="总角色人数 / 在场人数">
-          <el-input :model-value="`${roleTotal} / ${store.players.length}`" disabled />
+          <el-input
+            :model-value="`${roleTotal} / ${store.players.length}`"
+            disabled
+          />
         </el-form-item>
         <el-form-item label="平民词">
-          <el-input v-model="startForm.civilianWord" maxlength="100" placeholder="例如：苹果" />
+          <el-input
+            v-model="startForm.civilianWord"
+            maxlength="100"
+            placeholder="例如：苹果"
+          />
         </el-form-item>
         <el-form-item label="卧底词">
-          <el-input v-model="startForm.undercoverWord" maxlength="100" placeholder="例如：梨" />
+          <el-input
+            v-model="startForm.undercoverWord"
+            maxlength="100"
+            placeholder="例如：梨"
+          />
         </el-form-item>
       </div>
 
@@ -115,11 +170,15 @@ onMounted(async () => {
         <el-table-column prop="seatNo" label="座位" width="80" />
         <el-table-column prop="nickname" label="昵称" />
         <el-table-column prop="eliminated" label="状态">
-          <template #default="s">{{ s.row.eliminated ? "出局" : "存活" }}</template>
+          <template #default="s">{{
+            s.row.eliminated ? "出局" : "存活"
+          }}</template>
         </el-table-column>
         <el-table-column label="操作" width="90">
           <template #default="s">
-            <el-button link type="danger" @click="kickPlayer(s.row.id)">踢人</el-button>
+            <el-button link type="danger" @click="kickPlayer(s.row.id)"
+              >踢人</el-button
+            >
           </template>
         </el-table-column>
       </el-table>

@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.core.enums import GamePhase
-from app.schemas import GuessReq, InteractionBonusReq, StartGameReq, VoteReq
+from app.schemas import GuessReq, StartGameReq, VoteReq
 from app.services.game_service import GameService
 from app.services.ws import ws_manager
 
@@ -35,7 +35,9 @@ async def start_game(
         civilian_word=req.civilian_word,
         undercover_word=req.undercover_word,
     )
-    await ws_manager.broadcast(room.room_code, "game.started", {"gameId": game.id, "roundNo": 1})
+    await ws_manager.broadcast(
+        room.room_code, "game.started", {"gameId": game.id, "roundNo": 1}
+    )
     return {"gameId": game.id}
 
 
@@ -47,7 +49,7 @@ async def next_random_speaker(
     db: Session = Depends(get_db),
 ):
     game, room = _host_guard_by_game(db, game_id, x_host_secret)
-    player_id, completed = GameService.next_speaker(db, game, round_no, mode="random")
+    player_id, completed = GameService.next_speaker(db, game, mode="random")
     if player_id is not None:
         await ws_manager.broadcast(
             room.room_code,
@@ -63,7 +65,11 @@ async def next_random_speaker(
         await ws_manager.broadcast(
             room.room_code,
             "round.phase_changed",
-            {"gameId": game.id, "roundNo": round_no, "phase": GamePhase.ROUND_VOTING.value},
+            {
+                "gameId": game.id,
+                "roundNo": round_no,
+                "phase": GamePhase.ROUND_VOTING.value,
+            },
         )
     return {"player_id": player_id, "completed": completed}
 
@@ -76,7 +82,7 @@ async def next_seq_speaker(
     db: Session = Depends(get_db),
 ):
     game, room = _host_guard_by_game(db, game_id, x_host_secret)
-    player_id, completed = GameService.next_speaker(db, game, round_no, mode="seq")
+    player_id, completed = GameService.next_speaker(db, game, mode="seq")
     if player_id is not None:
         await ws_manager.broadcast(
             room.room_code,
@@ -92,7 +98,11 @@ async def next_seq_speaker(
         await ws_manager.broadcast(
             room.room_code,
             "round.phase_changed",
-            {"gameId": game.id, "roundNo": round_no, "phase": GamePhase.ROUND_VOTING.value},
+            {
+                "gameId": game.id,
+                "roundNo": round_no,
+                "phase": GamePhase.ROUND_VOTING.value,
+            },
         )
     return {"player_id": player_id, "completed": completed}
 
@@ -112,7 +122,11 @@ async def next_phase(
         {"gameId": game.id, "roundNo": game.round_no, "phase": phase},
     )
     if phase == GamePhase.GAME_FINISHED.value:
-        await ws_manager.broadcast(room.room_code, "game.finished", {"gameId": game.id, "winnerSide": game.winner_side})
+        await ws_manager.broadcast(
+            room.room_code,
+            "game.finished",
+            {"gameId": game.id, "winnerSide": game.winner_side},
+        )
     return {"phase": phase}
 
 
@@ -128,7 +142,11 @@ async def vote(
     room = GameService.get_room_by_id(db, game.room_id)
     voter = GameService.player_guard(db, x_player_token, game.room_id)
     GameService.vote(db, game, round_no, voter, req.target_player_id)
-    await ws_manager.broadcast(room.room_code, "round.vote_updated", {"gameId": game.id, "roundNo": round_no})
+    await ws_manager.broadcast(
+        room.room_code,
+        "round.vote_updated",
+        {"gameId": game.id, "roundNo": round_no},
+    )
     return {"ok": True}
 
 
@@ -148,10 +166,19 @@ async def guess(
     await ws_manager.broadcast(
         room.room_code,
         evt,
-        {"gameId": game.id, "roundNo": round_no, "playerId": player.id, "hit": hit},
+        {
+            "gameId": game.id,
+            "roundNo": round_no,
+            "playerId": player.id,
+            "hit": hit,
+        },
     )
     if game.phase == GamePhase.GAME_FINISHED.value:
-        await ws_manager.broadcast(room.room_code, "game.finished", {"gameId": game.id, "winnerSide": game.winner_side})
+        await ws_manager.broadcast(
+            room.room_code,
+            "game.finished",
+            {"gameId": game.id, "winnerSide": game.winner_side},
+        )
     return {"hit": hit}
 
 
@@ -168,7 +195,11 @@ async def finish_game(
 ):
     game, room = _host_guard_by_game(db, game_id, x_host_secret)
     GameService.finish_game(db, game)
-    await ws_manager.broadcast(room.room_code, "game.finished", {"gameId": game.id, "winnerSide": game.winner_side})
+    await ws_manager.broadcast(
+        room.room_code,
+        "game.finished",
+        {"gameId": game.id, "winnerSide": game.winner_side},
+    )
     return {"ok": True}
 
 
@@ -180,25 +211,9 @@ async def restart_game(
 ):
     game, room = _host_guard_by_game(db, game_id, x_host_secret)
     new_game = GameService.restart_game(db, game)
-    await ws_manager.broadcast(room.room_code, "game.started", {"gameId": new_game.id, "roundNo": 1})
-    return {"gameId": new_game.id}
-
-
-@router.post("/games/{game_id}/rounds/{round_no}/interaction-bonus")
-async def interaction_bonus(
-    game_id: int,
-    round_no: int,
-    req: InteractionBonusReq,
-    x_host_secret: str | None = Header(default=None),
-    db: Session = Depends(get_db),
-):
-    game, room = _host_guard_by_game(db, game_id, x_host_secret)
-    GameService.apply_interaction_bonus(
-        db,
-        game,
-        round_no,
-        req.speech_bonus_player_ids,
-        req.logic_bonus_player_ids,
+    await ws_manager.broadcast(
+        room.room_code,
+        "game.started",
+        {"gameId": new_game.id, "roundNo": 1},
     )
-    await ws_manager.broadcast(room.room_code, "leaderboard.updated", {"gameId": game.id, "roundNo": round_no})
-    return {"ok": True}
+    return {"gameId": new_game.id}

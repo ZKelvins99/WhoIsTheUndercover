@@ -1,15 +1,10 @@
 from app.models.entities import (
     Game,
     GameRole,
-    GameScore,
     GuessAttempt,
-    LeaderboardSnapshot,
-    OperationLog,
     Room,
     RoomPlayer,
     Round,
-    RoundScore,
-    SpeakingRecord,
     Vote,
 )
 
@@ -19,11 +14,6 @@ __all__ = [
     "Game",
     "GameRole",
     "Round",
-    "SpeakingRecord",
     "Vote",
     "GuessAttempt",
-    "RoundScore",
-    "GameScore",
-    "LeaderboardSnapshot",
-    "OperationLog",
 ]

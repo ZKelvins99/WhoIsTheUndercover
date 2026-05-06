@@ -76,7 +76,9 @@ export const useRoomStore = defineStore("room", {
           const pid = Number(payload?.data?.playerId || 0);
           if (pid > 0) {
             this.currentSpeakerId = pid;
-            this.speakerNotice = `请 ${pid} 号玩家发言`;
+            const speaker = this.players.find((p: any) => p.id === pid);
+            const name = speaker ? speaker.nickname : `${pid}号`;
+            this.speakerNotice = `请 ${name} 发言`;
             if (speakerNoticeTimer) {
               clearTimeout(speakerNoticeTimer);
             }
