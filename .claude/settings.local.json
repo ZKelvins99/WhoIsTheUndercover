@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find D:/Code_zkelvins/WhoIsTheUndercover/web/src -type f -exec wc -l {} +)",
+      "Bash(sort -t/ -k6)",
+      "Bash(npm install *)"
+    ]
+  }
+}

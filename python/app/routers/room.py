@@ -1,3 +1,5 @@
+from typing import Optional
+
 from fastapi import APIRouter, Depends, Header
 from sqlalchemy.orm import Session
 
@@ -27,7 +29,7 @@ async def join_room(room_code: str, req: JoinReq, db: Session = Depends(get_db))
 async def lock_room(
     room_code: str,
     req: LockReq,
-    x_host_secret: str | None = Header(default=None),
+    x_host_secret: Optional[str] = Header(default=None),
     db: Session = Depends(get_db),
 ):
     room = GameService.get_room_by_code(db, room_code)
@@ -41,7 +43,7 @@ async def lock_room(
 async def kick_player(
     room_code: str,
     player_id: int,
-    x_host_secret: str | None = Header(default=None),
+    x_host_secret: Optional[str] = Header(default=None),
     db: Session = Depends(get_db),
 ):
     room = GameService.get_room_by_code(db, room_code)
@@ -54,8 +56,8 @@ async def kick_player(
 @router.get("/rooms/{room_code}/snapshot")
 def room_snapshot(
     room_code: str,
-    x_host_secret: str | None = Header(default=None),
-    x_player_token: str | None = Header(default=None),
+    x_host_secret: Optional[str] = Header(default=None),
+    x_player_token: Optional[str] = Header(default=None),
     db: Session = Depends(get_db),
 ):
     room = GameService.get_room_by_code(db, room_code)

@@ -1,6 +1,17 @@
 import { defineStore } from "pinia";
 import { http, wsBase } from "../api/client";
 
+function setCookie(name: string, value: string, days = 30) {
+  const d = new Date();
+  d.setTime(d.getTime() + days * 86400000);
+  document.cookie = `${name}=${encodeURIComponent(value)};expires=${d.toUTCString()};path=/;SameSite=Lax`;
+}
+
+function getCookie(name: string): string {
+  const match = document.cookie.match(new RegExp("(^| )" + name + "=([^;]+)"));
+  return match ? decodeURIComponent(match[2]) : "";
+}
+
 let speakerNoticeTimer: ReturnType<typeof setTimeout> | null = null;
 
 export type BoardItem = {
@@ -15,9 +26,9 @@ export type BoardItem = {
 export const useRoomStore = defineStore("room", {
   state: () => ({
     roomCode: "",
-    hostSecret: localStorage.getItem("host_secret") || "",
-    playerToken: localStorage.getItem("player_token") || "",
-    playerId: Number(localStorage.getItem("player_id") || 0),
+    hostSecret: getCookie("host_secret"),
+    playerToken: getCookie("player_token"),
+    playerId: Number(getCookie("player_id") || 0),
     gameId: 0,
     game: null as any,
     phase: "LOBBY",
@@ -28,18 +39,19 @@ export const useRoomStore = defineStore("room", {
     lastEvent: "",
     currentSpeakerId: 0,
     speakerNotice: "",
+    speakerDialogVisible: false,
   }),
   actions: {
     setHostSecret(v: string) {
       this.hostSecret = v;
-      localStorage.setItem("host_secret", v);
+      setCookie("host_secret", v);
     },
     setPlayerToken(v: string, playerId?: number) {
       this.playerToken = v;
-      localStorage.setItem("player_token", v);
+      setCookie("player_token", v);
       if (playerId) {
         this.playerId = playerId;
-        localStorage.setItem("player_id", String(playerId));
+        setCookie("player_id", String(playerId));
       }
     },
     async fetchSnapshot(roomCode: string) {
@@ -79,13 +91,15 @@ export const useRoomStore = defineStore("room", {
             const speaker = this.players.find((p: any) => p.id === pid);
             const name = speaker ? speaker.nickname : `${pid}号`;
             this.speakerNotice = `请 ${name} 发言`;
+            this.speakerDialogVisible = true;
             if (speakerNoticeTimer) {
               clearTimeout(speakerNoticeTimer);
             }
             speakerNoticeTimer = setTimeout(() => {
               this.currentSpeakerId = 0;
               this.speakerNotice = "";
-            }, 5000);
+              this.speakerDialogVisible = false;
+            }, 3000);
           }
         }
 

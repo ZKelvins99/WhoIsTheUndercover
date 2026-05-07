@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -42,17 +42,28 @@ class NextSpeakerResp(BaseModel):
     player_id: int
 
 
+class RestartGameReq(BaseModel):
+    civilian_word: str = Field(min_length=1, max_length=100)
+    undercover_word: str = Field(min_length=1, max_length=100)
+    keep_scores: bool = True
+
+
+class AdjustScoreReq(BaseModel):
+    player_id: int
+    amount: int
+
+
 class SnapshotResp(BaseModel):
     room_code: str
-    game: dict[str, Any] | None
-    players: list[dict[str, Any]]
-    leaderboard: list[dict[str, Any]]
+    game: Optional[Dict[str, Any]] = None
+    players: List[Dict[str, Any]]
+    leaderboard: List[Dict[str, Any]]
 
 
 class EventEnvelope(BaseModel):
     event: str
     roomCode: str
-    gameId: int | None = None
-    roundNo: int | None = None
+    gameId: Optional[int] = None
+    roundNo: Optional[int] = None
     serverTime: datetime
-    data: dict[str, Any]
+    data: Dict[str, Any]

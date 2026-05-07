@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted } from "vue";
+import { computed, onMounted, ref, reactive } from "vue";
 import { useRoute } from "vue-router";
 import { ElMessage } from "element-plus";
 
@@ -10,6 +10,17 @@ import { useRoomStore } from "../stores/room";
 const route = useRoute();
 const store = useRoomStore();
 const roomCode = computed(() => String(route.params.roomCode || ""));
+
+// 新开一局表单
+const newGameForm = reactive({
+  civilianWord: "",
+  undercoverWord: "",
+  keepScores: true,
+});
+const showNewGameForm = ref(false);
+
+// 加减分
+const adjustAmounts = reactive<Record<number, number>>({});
 
 const phaseText = computed(() => {
   const map: Record<string, string> = {
@@ -110,23 +121,54 @@ async function finishGame() {
       headers: { "X-Host-Secret": store.hostSecret },
     });
     ElMessage.info("游戏已结束");
+    showNewGameForm.value = true;
     await store.fetchSnapshot(roomCode.value);
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.detail?.message || "结束失败");
   }
 }
 
-async function restartGame() {
+async function startNewGame() {
   if (!store.gameId) return;
+  if (!newGameForm.civilianWord.trim() || !newGameForm.undercoverWord.trim()) {
+    ElMessage.warning("请输入平民词和卧底词");
+    return;
+  }
   try {
-    const res = await http.post(`/api/games/${store.gameId}/restart`, null, {
-      headers: { "X-Host-Secret": store.hostSecret },
-    });
+    const res = await http.post(
+      `/api/games/${store.gameId}/restart`,
+      {
+        civilian_word: newGameForm.civilianWord.trim(),
+        undercover_word: newGameForm.undercoverWord.trim(),
+        keep_scores: newGameForm.keepScores,
+      },
+      { headers: { "X-Host-Secret": store.hostSecret } }
+    );
     store.gameId = res.data.gameId;
+    showNewGameForm.value = false;
+    newGameForm.civilianWord = "";
+    newGameForm.undercoverWord = "";
     await store.fetchSnapshot(roomCode.value);
-    ElMessage.success("已重新开始新一局");
+    ElMessage.success("新一局已开始");
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.detail?.message || "重开失败");
+    ElMessage.error(e?.response?.data?.detail?.message || "开局失败");
+  }
+}
+
+async function adjustScore(playerId: number) {
+  const amount = adjustAmounts[playerId];
+  if (!amount || amount === 0) return;
+  try {
+    await http.post(
+      `/api/rooms/${roomCode.value}/adjust-score`,
+      { player_id: playerId, amount },
+      { headers: { "X-Host-Secret": store.hostSecret } }
+    );
+    ElMessage.success(`已调整 ${nicknameOf(playerId)} 的分数 ${amount > 0 ? "+" : ""}${amount}`);
+    adjustAmounts[playerId] = 0;
+    await store.fetchSnapshot(roomCode.value);
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.detail?.message || "调整失败");
   }
 }
 
@@ -139,15 +181,27 @@ onMounted(async () => {
 <template>
   <div class="page" style="padding-bottom: 90px">
     <h1 class="page-title">主持人控制台</h1>
+
+    <!-- 发言人弹窗 -->
+    <el-dialog
+      v-model="store.speakerDialogVisible"
+      :show-close="false"
+      :close-on-click-modal="true"
+      :close-on-press-escape="false"
+      width="360px"
+      center
+      @close="store.speakerDialogVisible = false"
+    >
+      <div style="text-align: center; padding: 20px 0">
+        <div style="font-size: 16px; color: #909399; margin-bottom: 12px">当前发言人</div>
+        <div style="font-size: 32px; font-weight: bold; color: #409eff">
+          {{ store.speakerNotice.replace("请 ", "").replace(" 发言", "") }}
+        </div>
+        <div style="font-size: 14px; color: #909399; margin-top: 12px">请开始发言</div>
+      </div>
+    </el-dialog>
+
     <div class="panel">
-      <el-alert
-        v-if="store.speakerNotice"
-        :title="store.speakerNotice"
-        type="success"
-        show-icon
-        :closable="false"
-        style="margin-bottom: 10px"
-      />
       <p>房间：{{ roomCode }} | 轮次：{{ store.roundNo }}</p>
       <p>
         当前阶段：<strong>{{ phaseText }}</strong>
@@ -182,19 +236,68 @@ onMounted(async () => {
           @click="finishGame"
           >结束游戏</el-button
         >
-        <el-button
-          v-if="store.phase === 'GAME_FINISHED'"
-          type="success"
-          @click="restartGame"
-          >重新开始</el-button
-        >
       </div>
 
       <p v-if="(store as any).game?.winnerSide">
         胜方：{{ (store as any).game?.winnerSide }}
       </p>
 
-      <el-table :data="store.players" stripe :row-class-name="rowClassName">
+      <!-- 新开一局表单 -->
+      <div v-if="showNewGameForm || store.phase === 'GAME_FINISHED'" class="panel" style="margin-top: 16px; background: #f0f9ff">
+        <h3 style="margin-bottom: 12px">新开一局</h3>
+        <el-form label-width="80px">
+          <el-form-item label="平民词">
+            <el-input v-model="newGameForm.civilianWord" placeholder="请输入平民词" />
+          </el-form-item>
+          <el-form-item label="卧底词">
+            <el-input v-model="newGameForm.undercoverWord" placeholder="请输入卧底词" />
+          </el-form-item>
+          <el-form-item label="分数处理">
+            <el-radio-group v-model="newGameForm.keepScores">
+              <el-radio :value="true">保留上局分数</el-radio>
+              <el-radio :value="false">清零分数</el-radio>
+            </el-radio-group>
+          </el-form-item>
+          <el-form-item>
+            <el-button type="success" @click="startNewGame">开始新一局</el-button>
+          </el-form-item>
+        </el-form>
+      </div>
+
+      <!-- 手动加减分 -->
+      <div v-if="store.players.length > 0" class="panel" style="margin-top: 16px; background: #fdf6ec">
+        <h3 style="margin-bottom: 12px">手动加减分</h3>
+        <el-table :data="store.players" size="small">
+          <el-table-column prop="seatNo" label="座位" width="60" />
+          <el-table-column prop="nickname" label="昵称" />
+          <el-table-column label="当前分数" width="100">
+            <template #default="s">
+              {{ store.leaderboard.find((b: any) => b.playerId === s.row.id)?.totalScore || 0 }}
+            </template>
+          </el-table-column>
+          <el-table-column label="调整分数" width="200">
+            <template #default="s">
+              <div style="display: flex; gap: 4px; align-items: center">
+                <el-input-number
+                  v-model="adjustAmounts[s.row.id]"
+                  :min="-100"
+                  :max="100"
+                  size="small"
+                  style="width: 100px"
+                />
+                <el-button
+                  type="primary"
+                  size="small"
+                  @click="adjustScore(s.row.id)"
+                  :disabled="!adjustAmounts[s.row.id]"
+                >确认</el-button>
+              </div>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+
+      <el-table :data="store.players" stripe :row-class-name="rowClassName" style="margin-top: 16px">
         <el-table-column prop="seatNo" label="座位" width="60" />
         <el-table-column prop="nickname" label="昵称" />
         <el-table-column label="身份">

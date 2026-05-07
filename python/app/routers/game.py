@@ -1,16 +1,18 @@
+from typing import Optional
+
 from fastapi import APIRouter, Depends, Header
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.core.enums import GamePhase
-from app.schemas import GuessReq, StartGameReq, VoteReq
+from app.schemas import AdjustScoreReq, GuessReq, RestartGameReq, StartGameReq, VoteReq
 from app.services.game_service import GameService
 from app.services.ws import ws_manager
 
 router = APIRouter(prefix="/api", tags=["game"])
 
 
-def _host_guard_by_game(db: Session, game_id: int, host_secret: str | None):
+def _host_guard_by_game(db: Session, game_id: int, host_secret: Optional[str]):
     game = GameService.get_game(db, game_id)
     room = GameService.get_room_by_id(db, game.room_id)
     GameService.host_guard(room, host_secret)
@@ -21,7 +23,7 @@ def _host_guard_by_game(db: Session, game_id: int, host_secret: str | None):
 async def start_game(
     room_code: str,
     req: StartGameReq,
-    x_host_secret: str | None = Header(default=None),
+    x_host_secret: Optional[str] = Header(default=None),
     db: Session = Depends(get_db),
 ):
     room = GameService.get_room_by_code(db, room_code)
@@ -45,7 +47,7 @@ async def start_game(
 async def next_random_speaker(
     game_id: int,
     round_no: int,
-    x_host_secret: str | None = Header(default=None),
+    x_host_secret: Optional[str] = Header(default=None),
     db: Session = Depends(get_db),
 ):
     game, room = _host_guard_by_game(db, game_id, x_host_secret)
@@ -78,7 +80,7 @@ async def next_random_speaker(
 async def next_seq_speaker(
     game_id: int,
     round_no: int,
-    x_host_secret: str | None = Header(default=None),
+    x_host_secret: Optional[str] = Header(default=None),
     db: Session = Depends(get_db),
 ):
     game, room = _host_guard_by_game(db, game_id, x_host_secret)
@@ -111,7 +113,7 @@ async def next_seq_speaker(
 async def next_phase(
     game_id: int,
     round_no: int,
-    x_host_secret: str | None = Header(default=None),
+    x_host_secret: Optional[str] = Header(default=None),
     db: Session = Depends(get_db),
 ):
     game, room = _host_guard_by_game(db, game_id, x_host_secret)
@@ -135,7 +137,7 @@ async def vote(
     game_id: int,
     round_no: int,
     req: VoteReq,
-    x_player_token: str | None = Header(default=None),
+    x_player_token: Optional[str] = Header(default=None),
     db: Session = Depends(get_db),
 ):
     game = GameService.get_game(db, game_id)
@@ -155,7 +157,7 @@ async def guess(
     game_id: int,
     round_no: int,
     req: GuessReq,
-    x_player_token: str | None = Header(default=None),
+    x_player_token: Optional[str] = Header(default=None),
     db: Session = Depends(get_db),
 ):
     game = GameService.get_game(db, game_id)
@@ -190,7 +192,7 @@ def round_result(game_id: int, round_no: int, db: Session = Depends(get_db)):
 @router.post("/games/{game_id}/finish")
 async def finish_game(
     game_id: int,
-    x_host_secret: str | None = Header(default=None),
+    x_host_secret: Optional[str] = Header(default=None),
     db: Session = Depends(get_db),
 ):
     game, room = _host_guard_by_game(db, game_id, x_host_secret)
@@ -206,14 +208,39 @@ async def finish_game(
 @router.post("/games/{game_id}/restart")
 async def restart_game(
     game_id: int,
-    x_host_secret: str | None = Header(default=None),
+    req: RestartGameReq,
+    x_host_secret: Optional[str] = Header(default=None),
     db: Session = Depends(get_db),
 ):
     game, room = _host_guard_by_game(db, game_id, x_host_secret)
-    new_game = GameService.restart_game(db, game)
+    new_game = GameService.restart_game_with_options(
+        db,
+        game,
+        civilian_word=req.civilian_word,
+        undercover_word=req.undercover_word,
+        keep_scores=req.keep_scores,
+    )
     await ws_manager.broadcast(
         room.room_code,
         "game.started",
         {"gameId": new_game.id, "roundNo": 1},
     )
     return {"gameId": new_game.id}
+
+
+@router.post("/rooms/{room_code}/adjust-score")
+async def adjust_score(
+    room_code: str,
+    req: AdjustScoreReq,
+    x_host_secret: Optional[str] = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    room = GameService.get_room_by_code(db, room_code)
+    GameService.host_guard(room, x_host_secret)
+    GameService.adjust_player_score(db, room, req.player_id, req.amount)
+    await ws_manager.broadcast(
+        room.room_code,
+        "leaderboard.updated",
+        {"roomCode": room_code},
+    )
+    return {"ok": True}

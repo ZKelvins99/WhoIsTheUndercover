@@ -1,8 +1,12 @@
 import json
+import os
 import random
 import secrets
 from collections import Counter
 from datetime import datetime
+from typing import Optional, Tuple
+
+random.seed(int.from_bytes(os.urandom(8), "big"))
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -19,6 +23,9 @@ ALLOWED_TRANSITIONS = {
     GamePhase.ROUND_GUESSING.value: {GamePhase.ROUND_RESULT.value, GamePhase.GAME_FINISHED.value},
     GamePhase.ROUND_RESULT.value: {GamePhase.ROUND_SPEAKING.value, GamePhase.GAME_FINISHED.value},
 }
+
+
+VOTE_SCORE_CAP = 3  # 每局投票积分上限（参与+命中合计）
 
 
 class GameService:
@@ -74,12 +81,12 @@ class GameService:
         return room
 
     @staticmethod
-    def host_guard(room: Room, host_secret: str | None):
+    def host_guard(room: Room, host_secret: Optional[str]):
         if not host_secret or host_secret != room.host_secret:
             raise FORBIDDEN()
 
     @staticmethod
-    def player_guard(db: Session, player_token: str | None, room_id: int) -> RoomPlayer:
+    def player_guard(db: Session, player_token: Optional[str], room_id: int) -> RoomPlayer:
         if not player_token:
             raise FORBIDDEN()
         p = db.scalar(
@@ -195,6 +202,8 @@ class GameService:
         for p in players:
             p.eliminated = False
 
+        random.shuffle(players)
+
         game = Game(
             room_id=room.id,
             game_no=game_no,
@@ -247,10 +256,56 @@ class GameService:
             undercover_word=game.undercover_word,
         )
 
+    @staticmethod
+    def restart_game_with_options(
+        db: Session,
+        game: Game,
+        civilian_word: str,
+        undercover_word: str,
+        keep_scores: bool = True,
+    ) -> Game:
+        room = GameService.get_room_by_id(db, game.room_id)
+        if not keep_scores:
+            players = list(
+                db.scalars(
+                    select(RoomPlayer).where(RoomPlayer.room_id == room.id)
+                ).all()
+            )
+            for p in players:
+                p.cumulative_score = 0
+            db.commit()
+        role_rows = list(
+            db.scalars(select(GameRole).where(GameRole.game_id == game.id)).all()
+        )
+        return GameService.start_game(
+            db,
+            room,
+            civilian_count=sum(1 for r in role_rows if r.role == RoleType.CIVILIAN.value),
+            undercover_count=sum(
+                1 for r in role_rows if r.role == RoleType.UNDERCOVER.value
+            ),
+            blank_count=sum(1 for r in role_rows if r.role == RoleType.BLANK.value),
+            civilian_word=civilian_word,
+            undercover_word=undercover_word,
+        )
+
+    @staticmethod
+    def adjust_player_score(db: Session, room: Room, player_id: int, amount: int):
+        player = db.scalar(
+            select(RoomPlayer).where(
+                RoomPlayer.id == player_id,
+                RoomPlayer.room_id == room.id,
+            )
+        )
+        if not player:
+            raise NOT_FOUND()
+        player.cumulative_score += amount
+        db.commit()
+
     # ─── speaking ──────────────────────────────────────────────
 
     @staticmethod
-    def next_speaker(db: Session, game: Game, mode: str) -> tuple[int | None, bool]:
+    def next_speaker(db: Session, game: Game, mode: str) -> Tuple[Optional[int], bool]:
         if game.phase not in {
             GamePhase.ROUND_SPEAKING.value,
             GamePhase.ROUND_TIE_BREAK.value,
@@ -531,6 +586,15 @@ class GameService:
             return
         game.winner_side = winner_side
         game.phase = GamePhase.GAME_FINISHED.value
+        # 持久化本局分数到累计分数
+        board = GameService._compute_leaderboard(db, game)
+        for item in board:
+            player = db.scalar(
+                select(RoomPlayer).where(RoomPlayer.id == item["playerId"])
+            )
+            if player:
+                player.cumulative_score += item["totalScore"]
+        db.commit()
 
     @staticmethod
     def _compute_leaderboard(db: Session, game: Game) -> list[dict]:
@@ -560,9 +624,10 @@ class GameService:
             scores[p.id] = {
                 "playerId": p.id,
                 "nickname": p.nickname,
-                "totalScore": 0,
+                "totalScore": p.cumulative_score,
                 "survivalRounds": 0,
                 "hitVotes": 0,
+                "voteScoreThisGame": 0,
                 "joinOrder": p.join_order,
             }
 
@@ -589,7 +654,12 @@ class GameService:
 
             for v in votes:
                 if v.voter_player_id in scores:
-                    scores[v.voter_player_id]["totalScore"] += 1
+                    vs = scores[v.voter_player_id]
+                    remaining = VOTE_SCORE_CAP - vs["voteScoreThisGame"]
+                    if remaining > 0:
+                        gain = min(1, remaining)
+                        vs["totalScore"] += gain
+                        vs["voteScoreThisGame"] += gain
                 if (
                     eliminated_this_round
                     and v.target_player_id == eliminated_this_round
@@ -599,8 +669,13 @@ class GameService:
                     voter_role = roles[v.voter_player_id].role
                     target_role = roles[eliminated_this_round].role
                     if voter_role != target_role:
-                        scores[v.voter_player_id]["totalScore"] += 2
-                        scores[v.voter_player_id]["hitVotes"] += 1
+                        vs = scores[v.voter_player_id]
+                        vs["hitVotes"] += 1  # 命中次数不受上限约束
+                        remaining = VOTE_SCORE_CAP - vs["voteScoreThisGame"]
+                        if remaining > 0:
+                            gain = min(2, remaining)
+                            vs["totalScore"] += gain
+                            vs["voteScoreThisGame"] += gain
 
             # Update alive after elimination
             if counter:
@@ -639,6 +714,8 @@ class GameService:
                     scores[pid]["totalScore"] += 3
 
         board = list(scores.values())
+        for item in board:
+            del item["voteScoreThisGame"]
         board.sort(
             key=lambda x: (
                 -x["totalScore"],
@@ -666,7 +743,7 @@ class GameService:
                 {
                     "playerId": p.id,
                     "nickname": p.nickname,
-                    "totalScore": 0,
+                    "totalScore": p.cumulative_score,
                     "survivalRounds": 0,
                     "hitVotes": 0,
                     "joinOrder": p.join_order,
@@ -679,7 +756,7 @@ class GameService:
 
     @staticmethod
     def room_snapshot(
-        db: Session, room: Room, host_secret: str | None, player_token: str | None
+        db: Session, room: Room, host_secret: Optional[str], player_token: Optional[str]
     ) -> dict:
         game = db.scalar(
             select(Game)
@@ -709,7 +786,7 @@ class GameService:
 
         roles: dict[int, str] = {}
         spoken_map: dict[int, bool] = {}
-        my_word: str | None = None
+        my_word: Optional[str] = None
         my_vote_submitted = False
         my_guess_used = 0
         my_guess_limit = 0
