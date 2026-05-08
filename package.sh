@@ -32,8 +32,13 @@ cp    python/requirements.txt "${TEMP_DIR}/${PACKAGE_NAME}/"
 cat > "${TEMP_DIR}/${PACKAGE_NAME}/start.sh" << 'EOF'
 #!/bin/bash
 DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "${DIR}/app/.."
-nohup python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 > uvicorn.log 2>&1 &
+cd "${DIR}"
+
+# Activate conda base environment
+eval "$(conda shell.bash hook)"
+conda activate base
+
+nohup python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level info > uvicorn.log 2>&1 &
 echo $! > uvicorn.pid
 IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
 echo "服务已启动 (PID: $(cat uvicorn.pid))"

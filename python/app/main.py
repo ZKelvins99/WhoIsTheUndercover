@@ -1,5 +1,6 @@
 import os
 import sys
+import logging
 from contextlib import asynccontextmanager
 
 if __package__ is None or __package__ == "":
@@ -16,12 +17,14 @@ from app.core.db import Base, engine
 from app.core.errors import AppError
 from app.routers import game, room, ws
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # SQLite WAL mode for better concurrent read/write
     from sqlalchemy import text
 
     with engine.connect() as conn:
@@ -29,6 +32,7 @@ async def lifespan(app: FastAPI):
         conn.execute(text("PRAGMA busy_timeout=5000"))
         conn.commit()
     Base.metadata.create_all(bind=engine)
+    logger.info("Application started, static dir: %s, exists: %s", STATIC_DIR, os.path.isdir(STATIC_DIR))
     yield
 
 
@@ -54,17 +58,17 @@ def health():
     return {"ok": True}
 
 
+# API routes first
 app.include_router(room.router)
 app.include_router(game.router)
 app.include_router(ws.router)
 
-# Serve frontend static files (built by `npm run build` in web/)
+# Serve frontend: mount /assets for static files, then catch-all SPA fallback
 if os.path.isdir(STATIC_DIR):
     app.mount("/assets", StaticFiles(directory=os.path.join(STATIC_DIR, "assets")), name="static-assets")
 
     @app.get("/{full_path:path}")
     async def serve_spa(request: Request, full_path: str):
-        # Serve static file if it exists, otherwise return index.html for SPA routing
         file_path = os.path.join(STATIC_DIR, full_path)
         if full_path and os.path.isfile(file_path):
             return FileResponse(file_path)
