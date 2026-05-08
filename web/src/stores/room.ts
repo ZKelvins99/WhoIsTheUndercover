@@ -36,6 +36,8 @@ export const useRoomStore = defineStore("room", {
     players: [] as any[],
     leaderboard: [] as BoardItem[],
     ws: null as WebSocket | null,
+    wsRetryCount: 0,
+    wsManualClose: false,
     lastEvent: "",
     currentSpeakerId: 0,
     speakerNotice: "",
@@ -76,13 +78,20 @@ export const useRoomStore = defineStore("room", {
       }
     },
     connectWS(roomCode: string) {
+      this.wsManualClose = false;
       if (this.ws) {
         this.ws.close();
       }
       const ws = new WebSocket(`${wsBase()}/ws/rooms/${roomCode}`);
+      ws.onopen = () => {
+        this.wsRetryCount = 0;
+      };
       ws.onmessage = (evt) => {
         const payload = JSON.parse(evt.data);
         this.lastEvent = payload.event;
+
+        // Ignore heartbeat responses
+        if (payload.event === "heartbeat.ping") return;
 
         if (payload.event === "round.speaker_selected") {
           const pid = Number(payload?.data?.playerId || 0);
@@ -105,9 +114,26 @@ export const useRoomStore = defineStore("room", {
 
         this.fetchSnapshot(roomCode);
       };
+      ws.onclose = () => {
+        this.ws = null;
+        // Auto-reconnect with exponential backoff (max 10s) unless manually closed
+        if (!this.wsManualClose && this.roomCode) {
+          const delay = Math.min(1000 * Math.pow(2, this.wsRetryCount), 10000);
+          this.wsRetryCount++;
+          setTimeout(() => {
+            if (!this.wsManualClose && this.roomCode && !this.ws) {
+              this.connectWS(roomCode);
+            }
+          }, delay);
+        }
+      };
+      ws.onerror = () => {
+        ws.close();
+      };
       this.ws = ws;
     },
     disconnectWS() {
+      this.wsManualClose = true;
       if (this.ws) {
         this.ws.close();
         this.ws = null;

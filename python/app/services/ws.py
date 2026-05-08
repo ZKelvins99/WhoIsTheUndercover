@@ -1,3 +1,4 @@
+import asyncio
 from collections import defaultdict
 from datetime import datetime
 from typing import Any
@@ -8,10 +9,13 @@ from fastapi import WebSocket
 class WSManager:
     def __init__(self):
         self._rooms: dict[str, list[WebSocket]] = defaultdict(list)
+        self._heartbeat_task: asyncio.Task | None = None
 
     async def connect(self, room_code: str, ws: WebSocket):
         await ws.accept()
         self._rooms[room_code].append(ws)
+        if self._heartbeat_task is None or self._heartbeat_task.done():
+            self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
 
     def disconnect(self, room_code: str, ws: WebSocket):
         if room_code not in self._rooms:
@@ -36,6 +40,20 @@ class WSManager:
                 dead.append(ws)
         for ws in dead:
             self.disconnect(room_code, ws)
+
+    async def _heartbeat_loop(self):
+        """Send periodic pings to detect and clean dead connections."""
+        while True:
+            await asyncio.sleep(25)
+            for room_code in list(self._rooms.keys()):
+                dead: list[WebSocket] = []
+                for ws in self._rooms.get(room_code, []):
+                    try:
+                        await ws.send_json({"event": "heartbeat.ping", "ts": datetime.utcnow().isoformat()})
+                    except Exception:
+                        dead.append(ws)
+                for ws in dead:
+                    self.disconnect(room_code, ws)
 
 
 ws_manager = WSManager()

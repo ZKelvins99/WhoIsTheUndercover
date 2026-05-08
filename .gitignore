@@ -11,6 +11,10 @@ ENV/
 .venv
 *.env
 *.bak
+python/static/
+python/*.db
+python/*.db-wal
+python/*.db-shm
 
 # Vue / Node 前端相关
 web/node_modules/
